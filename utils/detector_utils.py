@@ -1,3 +1,4 @@
+
 # Utilities for object detector.
 
 import numpy as np
@@ -7,29 +8,36 @@ import os
 from threading import Thread
 from datetime import datetime
 import cv2
-from utils import label_map_util
+from . import label_map_util
 from collections import defaultdict
+import time
+import zmq
 
 
 detection_graph = tf.Graph()
 sys.path.append("..")
 
 # score threshold for showing bounding boxes.
-_score_thresh = 0.27
+_score_thresh = 0.3
 
 MODEL_NAME = 'hand_inference_graph'
 # Path to frozen detection graph. This is the actual model that is used for the object detection.
-PATH_TO_CKPT = MODEL_NAME + '/frozen_inference_graph.pb'
+PATH_TO_CKPT = 'handtracking/' + MODEL_NAME + '/frozen_inference_graph.pb'
 # List of the strings that is used to add correct label for each box.
-PATH_TO_LABELS = os.path.join(MODEL_NAME, 'hand_label_map.pbtxt')
+PATH_TO_LABELS = os.path.join('handtracking', MODEL_NAME, 'hand_label_map.pbtxt')
 
-NUM_CLASSES = 1
+# Egohanddatsets labels are 4 classes , myleft, myright, yourleft,yourright
+NUM_CLASSES = 4
 # load label map
 label_map = label_map_util.load_labelmap(PATH_TO_LABELS)
 categories = label_map_util.convert_label_map_to_categories(
     label_map, max_num_classes=NUM_CLASSES, use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
 
+# want to use socket, remove #
+# context = zmq.Context()
+# socket = context.socket(zmq.REP)
+# socket.bind("tcp://*:5555")
 
 # Load a frozen infrerence graph into memory
 def load_inference_graph():
@@ -50,14 +58,74 @@ def load_inference_graph():
 
 # draw the detected bounding boxes on the images
 # You can modify this to also draw a label.
-def draw_box_on_image(num_hands_detect, score_thresh, scores, boxes, im_width, im_height, image_np):
+def draw_box_on_image(num_hands_detect, score_thresh, scores, boxes, classes, im_width, im_height, image_np ):
+    sendText = ""
+    print(num_hands_detect)
     for i in range(num_hands_detect):
-        if (scores[i] > score_thresh):
-            (left, right, top, bottom) = (boxes[i][1] * im_width, boxes[i][3] * im_width,
-                                          boxes[i][0] * im_height, boxes[i][2] * im_height)
-            p1 = (int(left), int(top))
-            p2 = (int(right), int(bottom))
-            cv2.rectangle(image_np, p1, p2, (77, 255, 9), 3, 1)
+
+        print("detect")
+        #left, right, top, bottom are box coordinates
+        sendText = sendText + str(i) + ","
+        (left, right, top, bottom) = (boxes[i][1] * im_width, boxes[i][3] * im_width,
+                                      boxes[i][0] * im_height, boxes[i][2] * im_height)
+        p1 = (int(left), int(top))
+        p2 = (int(right), int(bottom))
+
+        #x,y for finding median
+        p3 = ((int(left)+int(right))/2 ,(int(top)+int(bottom))/2)
+        #print(p1,"p1",p2,"p2",p3, "p3")
+        #print("im_width",im_width,"im_height",im_height)
+
+        #create label
+        label = category_index[classes[i]] # ex) {'id': 4, 'name': 'yourright'}
+        #print(label['name']) #yourleft
+
+        labelText = ""
+        #Code for checking a left or right hand
+
+        if label['id'] % 2 == 0:
+            labelText = "LH"
+        else:
+            labelText = "RH"
+
+        #labelText = label['name']
+        sendText = sendText+labelText +","
+        sendText = sendText + str(p1[0])+","+str(p1[1])+","+ str(p2[0])+","+str(p2[1])+","
+
+
+        #  Send reply back to client
+        #  In the real world usage, after you finish your work, send your output here
+        # remove # if you want to send socket
+        #socket.recv()
+        # time.sleep(0.01)
+        # socket.send(labelText.encode('UTF-8'))
+        cv2.rectangle(image_np, p1, p2, (77, 255, 9), 1, 1)
+        cv2.putText(image_np, labelText, p1, cv2.FONT_HERSHEY_SIMPLEX, 0.75, (77, 255, 9), 2)
+        #save_name = "final_image" +str(img_num)+".png"
+        #cv2.imwrite(save_name, image_np)
+
+'''
+    socket project main reference - https://github.com/off99555/Unity3D-Python-Communication/blob/master/PythonFiles/server.py
+
+    if sendText != "":
+        message = socket.recv()
+        print("Received request: %s" % message)
+        #  Do some 'work'.
+        #  Try reducing sleep time to 0.01 to see how blazingly fast it communicates
+        #  In the real world usage, you just need to replace time.sleep() with
+        #  whatever work you want python to do, maybe a machine learning task?
+        sendText = sendText +str(im_width)+"," +str(im_height)+","
+        time.sleep(0.01)
+        socket.send(sendText.encode('UTF-8'))
+        #print("sendText", sendText)
+    else:
+        sendText = "no detect"
+        message = socket.recv()
+        print("Received request: %s" % message)
+        time.sleep(0.01)
+        socket.send(sendText.encode('UTF-8'))
+
+'''
 
 
 # Show fps value on image.
@@ -88,7 +156,8 @@ def detect_objects(image_np, detection_graph, sess):
         [detection_boxes, detection_scores,
             detection_classes, num_detections],
         feed_dict={image_tensor: image_np_expanded})
-    return np.squeeze(boxes), np.squeeze(scores)
+    return np.squeeze(boxes), np.squeeze(scores),np.squeeze(classes)
+
 
 
 # Code to thread reading camera input.
