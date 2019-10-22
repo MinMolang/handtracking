@@ -1,4 +1,4 @@
-"""I edited main inference file of handtracking pong project <https://github.com/alvinwan/hand-tracking-pong>"""
+"""main inference file of handtracking pong project <https://github.com/alvinwan/hand-tracking-pong>"""
 
 from handtracking.utils import detector_utils
 import cv2
